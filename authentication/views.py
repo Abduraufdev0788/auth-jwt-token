@@ -6,10 +6,13 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 from django.conf import settings
 
 from accounts.permissions import IsAdmin
+
+from accounts.models import CustomUser
 
 class Profile(APIView):
     authentication_classes = [JWTAuthentication]
@@ -47,5 +50,21 @@ class GoogleCallbackView(APIView):
             "redirect_uri":settings.GOOGLE_REDIRECT_URL
         }
         access_token = requests.post(settings.GOOGLE_TOKEN_URL, data=data).json()['access_token']
+
+        user = requests.get(settings.GOOGLE_USER_INFO_URL, headers = {'Authorization': f'Bearer {access_token}'}).json()
+
+        new_user, created = CustomUser.objects.get_or_create(
+            username = user['id'],
+            defaults={
+                'email': user['email'],
+                'first_name': user.get('given_name', ''),
+                'last_name': user.get('family_name', ''),
+                'profile_picture': user.get('picture', ''),
+            }
+        )
         
-        return Response({"token": access_token})
+        tokens = {
+            "access": str(AccessToken.for_user(new_user)),
+            "refresh": str(RefreshToken.for_user(new_user))
+        }
+        return Response({"tokens": tokens})
